@@ -161,23 +161,27 @@ over_representation <- function(genes, all_genes) {
 }
 
 
-over_representation_analyses <- function() {
+over_representation_analyses <- function(PMC_available=FALSE) {
 
-  #Load the data 
+  #Load the data, set threshold to 0.2
   data <- read_output_files(0.2)
 
   #Get the genes of the PMC group and sex-combined model
-  #TODO uncomment if OMC data is available
-  #pmc_data <- load_PMC_data()
-  #all_genes_pmc <- substr(colnames(pmc_data[["X"]]),1,15)
-  #or_pmc_group<-over_representation(data[["PMC_group"]]$Gene, all_genes_pmc)
-  #or_pmc_sex_combined <- over_representation(data[["PMC_sex_combined"]]$Gene, all_genes_pmc)
+  if(PMC_available) {
+    pmc_data <- load_PMC_data()
+    all_genes_pmc <- substr(colnames(pmc_data[["X"]]),1,15)
+    or_pmc_group<-over_representation(data[["PMC_group"]]$Gene, all_genes_pmc)
+    or_pmc_sex_combined <- over_representation(data[["PMC_sex_combined"]]$Gene, all_genes_pmc)
+  }
+ 
 
   #TARGET group gender
   target_data <- load_TARGET_data()
-  print(target_data[["X"]])
   all_genes <- colnames(target_data[["X"]])
   over_representation(data[["TARGET_group"]]$Gene, all_genes)
+
+  over_representation(data[["TARGET_group_gender"]]$Gene, all_genes)
+  
 }
 
 

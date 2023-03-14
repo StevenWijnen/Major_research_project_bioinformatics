@@ -13,7 +13,7 @@ wd <- getwd()
 source(paste(wd, "RNA/Scripts/LoadData.R", sep="/"))
 #Get the kegg pathways for hsa
 
-load("RNA/data/hsa_KEGG.RData")
+kegg <- download_KEGG("hsa")
 
 #INPUT: data -> dataframe: The dataframe for which you want to perform permutation test
 #       group-> string: either cat.os+tall for TARGET or cat.os+tall for PMC; This represents the group within the dataframe that needs to be used to calculate the T^2 
