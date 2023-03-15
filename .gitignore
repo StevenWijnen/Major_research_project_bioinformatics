@@ -45,3 +45,9 @@ RNA/Scripts/blacklist_pmc_ids.R
 RNA/Permutation_Tests/output
 RNA/data/TARGET
 RNA/data/hsa_KEGG.RData
+RNA/data/PMC
+
+
+
+#DON'T DELETE THIS LINE:
+RNA/data/PMC

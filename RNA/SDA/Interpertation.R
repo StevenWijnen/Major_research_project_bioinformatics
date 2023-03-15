@@ -27,7 +27,7 @@ read_output_files <- function(threshold = 0.8) {
   #although this is true in most cases not for all 
   #The paper shows how we can obtain fold change back from cat-score, this was performed in the pipeline
   #here only the direciton (+1 or -1) for up or downregulation is given,
-  #If you really want to see a specific effect for the gene, plot the boxplot from the normalised count data see: plot_boxplot() function
+  #If you really want to see a specific effect for the gene, plot the boxplot from the normalised count data
   
 
   #Read output files 
@@ -135,7 +135,10 @@ important_genes_tables <- function(threshold=0.8) {
 }
 
 
-
+#Wrapper funciton for KEGG overrepresentation
+#INPUT: genes -> vector: ENSEMBL ID's of genes with chosen FDR cutoff found by SDA
+#       all_genes -> vector: ENSEMBL IDS of all genes in the study used as universe
+#OUTPUT: Enrich KEGG result object and enrich plot is saved
 over_representation <- function(genes, all_genes) {
   mapper <- bitr(genes,  "ENSEMBL", "ENTREZID", org.Hs.eg.db)
   universe <-  bitr(all_genes,  "ENSEMBL", "ENTREZID", org.Hs.eg.db)
@@ -160,7 +163,7 @@ over_representation <- function(genes, all_genes) {
   return(kegg_over)
 }
 
-
+#Call this function to create over representation plots 
 over_representation_analyses <- function(PMC_available=FALSE) {
 
   #Load the data, set threshold to 0.2
@@ -170,262 +173,206 @@ over_representation_analyses <- function(PMC_available=FALSE) {
   if(PMC_available) {
     pmc_data <- load_PMC_data()
     all_genes_pmc <- substr(colnames(pmc_data[["X"]]),1,15)
-    or_pmc_group<-over_representation(data[["PMC_group"]]$Gene, all_genes_pmc)
-    or_pmc_sex_combined <- over_representation(data[["PMC_sex_combined"]]$Gene, all_genes_pmc)
+    or_pmc_group<-over_representation((data[["PMC_group"]] %>% filter(d_c_m != d_d_m))$Gene, all_genes_pmc)
+    or_pmc_sex_combined <- over_representation((data[["PMC_group_gender"]] %>% filter(d_c != d_d))$Gene, all_genes_pmc)
   }
  
 
   #TARGET group gender
   target_data <- load_TARGET_data()
   all_genes <- colnames(target_data[["X"]])
-  over_representation(data[["TARGET_group"]]$Gene, all_genes)
+  over_representation((data[["TARGET_group"]]  %>% filter(d_c != d_d))$Gene, all_genes)
+  tover_representation((data[["TARGET_group_gender"]] %>% filter(d_c_m != d_d_m))$Gene, all_genes)
+}
 
-  over_representation(data[["TARGET_group_gender"]]$Gene, all_genes)
+
+#Download the kegg pathways
+kegg <- download_KEGG("hsa", keggType = "KEGG", keyType = "kegg")
+
+
+#Implementation for PMC dataset, same can be performed for the TARGET dataset
+kegg_interpretation_permutation <- function(dataset="PMC") {
+  data <- read_output_files(0.2)
+  
+  if(dataset == "PMC") {
+      #Do to parallelization of the HPC we splitted the 10000 permutations in 2 files. Load both and merge them
+      permuted_kegg_scores.1 <- read_csv(paste(wd, "RNA/Permutation_Tests/output/output_kegg_permutation/pmc_kegg_permutation_5001.csv", sep="/"))
+      permuted_kegg_scores.2 <- read_csv(paste(wd, "RNA/Permutation_Tests/output/output_kegg_permutation/pmc_kegg_permutation_5002.csv", sep="/"))
+
+        #for all kegg pathways get the T2 value 
+        t2_list <- tsquare_kegg(data[["PMC_group"]], "cat_d", "d_d")
+  } else {
+     permuted_kegg_scores.1 <- read_csv(paste(wd, "RNA/Permutation_Tests/output/output_kegg_permutation/target_kegg_permutation_5001.csv", sep="/"))
+     permuted_kegg_scores.2 <- read_csv(paste(wd, "RNA/Permutation_Tests/output/output_kegg_permutation/target_kegg_permutation_5002.csv", sep="/"))
+
+    #for all kegg pathways get the T2 value 
+      t2_list <- tsquare_kegg(data[["TARGET_group"]], "cat_d", "d_d")
+  }
+  
+  colnames(permuted_kegg_scores.1)[1] <- "ID"
+  colnames(permuted_kegg_scores.2)[1] <- "ID"
+  permuted_kegg_scores <- merge(permuted_kegg_scores.1, permuted_kegg_scores.2, by="ID")
+  
+
+  T2_values <- sapply(t2_list, function(a){as.double(a[["T2"]])})
+  
+  #Create dataframe with null pathway to have it filled already
+  result <- data.frame("Id" = c("hsa000"), "name" = c("test"), "p_value"=c(1), "T2"=c(1), "p_adj"=c(1))
+  
+  #for all T2 values check significance
+  for(name in names(T2_values)) {
+
+    #Get the permuteted scores for this pathway, skip first column since its the name
+    perm_distribution <- as.numeric(permuted_kegg_scores[permuted_kegg_scores[,1] == name,-1])
+    
+    #Calculate the percentage of scores from the permutations that is equal or greater than the found score by the real model for the pathway, than calculate the probability of finding our score 
+    n_equal_or_higher_to_T2_value <- sum(perm_distribution >= T2_values[name])
+    probability <- n_equal_or_higher_to_T2_value / length(perm_distribution)
+    
+    #Write the score of the pathway to the result dataframe, give p_adj 0 for now  
+    result <- rbind(result, c("Id"= name,"name"= "", "p_value"=probability, "T2"=as.numeric(T2_values[name]), "p_adj"=0))
+  }
+
+  result <- result[-1,]
+  #Add not only the ids but also the names of the KEGG pathway to the result dataframe
+  result$name <- (kegg_pathway_id_to_name(result$Id))$to
+  #Convert p values to doubles 
+  result$p_value <- as.double(result$p_value)
+  #Calculate adjusted p scores using Benjamini Hochberg method
+  result$p_adj <- p.adjust(result$p_value, method="BH")
+
+  result$T2 <- as.double(result$T2)
+  
+  #Return the dataframe
+  return(result) 
+}
+
+#Function used to calcualte all the T^2 values given the found cat scores by SDA
+tsquare_kegg <- function(df, group, dir="") {
+  #some genes are then duplicated (only 1 or 2) so only keep the first one
+  if(length(which(duplicated(df$Gene))) > 0) {
+    df <- df[-which(duplicated(df$Gene)),]
+  } 
+
+  #Map ensembl ids to entrezids, as used by KEGG
+  mapper <- bitr(df$Gene, "ENSEMBL", "ENTREZID", org.Hs.eg.db)
+
+  list_T2<- list()
+  #for every kegg pathway...
+  for(pathway in unique(kegg$KEGGPATHID2EXTID$from)) { 
+    #Get the entrez ids of the pathway
+    entrez_ids_of_pathway <- kegg$KEGGPATHID2EXTID[kegg$KEGGPATHID2EXTI$from == pathway,"to"]
+    ensembl_ids <- mapper[mapper$ENTREZID %in% entrez_ids_of_pathway, "ENSEMBL"]
+    ensembl_ids <- ensembl_ids[!duplicated(ensembl_ids)]
+    
+    #Caluculate T^2 as descrbed by Zuber, V. and Strimmer, K. (2009).
+    T2 <- sum(df[df$Gene %in% ensembl_ids, group]^2 )
+
+    # As described we van also use the gene specific score for classification, calculate it, might be used in the future
+    gene_specific_score <- data.frame("gene" = ensembl_ids, 
+                                      "value" = sign(df[df$Gene %in% ensembl_ids, group]) * sqrt(T2)
+                                      )
+    #Calculate directed scores if you want to; Than give the name of the column that holds the value for transforming the cat scores to directed cat scores 
+    directed_scores <- c()
+    if(dir != "") {
+      genes_of_intrest <- df[df$Gene %in% ensembl_ids, c("Gene", group, dir)]
+      directed_scores <- abs(genes_of_intrest[,group]) * genes_of_intrest[, dir]
+      names(directed_scores) <- genes_of_intrest$Gene
+    }
+    #Save all the genes that where used in the analysis and store there gene specific score with it 
+    genes_of_intrest <- df[df$Gene %in% ensembl_ids, c("Gene", group)]
+    
+    list_T2[[pathway]] <- list("T2"= T2, "signed_score"=gene_specific_score, "cat_scores_group"= directed_scores)
+  }
+  
+  return(list_T2)
+}
+
+kegg_pathway_id_to_name <- function(ids) {
+  return(kegg$KEGGPATHID2NAME %>% dplyr::filter(from %in% ids))
+}
+
+
+#Helper function to order a list containg T^2 values
+order_list <- function(ls){ 
+  return(ls[order(sapply(ls, function(l) {unlist(l[1])}, simplify=T ), decreasing=T )])
+}
+
+kegg_interpretation_permutation("TARGET")
+
+
+#Function to view a kegg pathway
+kegg_pathway_viewer <- function(pathway) {
+  data <- read_output_files(0.8)
+  pmc_group <- data[["PMC_group"]]
+  target_group <- data[["TARGET_group"]]
+  
+  pmc_group_gender <- data[["PMC_group_gender"]]
+  target_group_gender <- data[["TARGET_group_gender"]]
+  
+  pmc_list_all <- tsquare_kegg(pmc_group, "cat_d", "d_d")
+  ordered_pmc_all <-  order_list(pmc_list_all)
+  
+  genes<-pmc_list_all[[pathway]]$cat_scores_group
+  idx <-genes
+  
+  mapper<-(bitr(names(idx), "ENSEMBL", c("ENTREZID", "UNIPROT" ), org.Hs.eg.db))
+  names(idx)<- mapper[!duplicated(mapper$ENSEMBL),2]
+  
+  ss <- summary(idx)
+  pathview(gene.data=idx,species="hsa",pathway.id=pathway, limit = c(-10, 10),  high = "#D40000FF", mid = "#FFFFFF", low = "#005EB8FF", cpd.idtype = "kegg",gene.idtype =
+             "entrez", kegg.dir="kegg_analysis/kegg_data")
   
 }
 
 
-over_representation_analyses()
+#ls <- kegg_interpretation_permutation()
+#print(ls)
 
 
 
+#Calculate P scores for the models from the 405 permuted 
+calc_P <- function(df) {
+  actual_kfold <- df$df_model_stats[1]
+  actual_valid <- df$df_model_stats[2]
+  print(actual_kfold)
+  print(actual_valid)
+  temp_kfold <- as.numeric(df[1,3:dim(df)[2]])
+  temp_valid <- as.numeric(df[2,3:dim(df)[2]])
 
-
-# kegg_pathway_id_to_name <- function(ids) {
-#   return(kegg$KEGGPATHID2NAME %>% dplyr::filter(from %in% ids))
-# }
-
-# tsquare_kegg <- function(df, group, dir="") {
-#   kegg <- download_KEGG("hsa", keggType = "KEGG", keyType = "kegg")
-
-#   #some genes are then duplicated (only 1 or 2) so only keep the first one
-#   #apperently -c(0) returns empty dataframe, so first check if there are duplcites
-#   if(length(which(duplicated(df$Gene))) > 0) {
-#     df <- df[-which(duplicated(df$Gene)),]
-#   } 
-#   #Map ensembl ids to entrezids
-#   mapper <- bitr(df$Gene, "ENSEMBL", "ENTREZID", org.Hs.eg.db)
-
-#   list_T2<- list()
-#   #for every kegg pathway...
-#   for(pathway in unique(kegg$KEGGPATHID2EXTID$from)) { 
-#     #Get the entrez ids of the pathway
-#     entrez_ids_of_pathway <- kegg$KEGGPATHID2EXTID[kegg$KEGGPATHID2EXTI$from == pathway,"to"]
-#     ensembl_ids <- mapper[mapper$ENTREZID %in% entrez_ids_of_pathway, "ENSEMBL"]
-#     ensembl_ids <- ensembl_ids[!duplicated(ensembl_ids)]
-#     T2 <- sum(df[df$Gene %in% ensembl_ids, group]^2 )
-
-#         #make class which can hold specific genes if we need that 
-#     gene_specific_score <- data.frame("gene" = ensembl_ids, 
-#                                       "value" = sign(df[df$Gene %in% ensembl_ids, group]) * sqrt(T2)
-#                                       )
-#     directed_scores <- c()
-#     if(dir != "") {
-#       genes_of_intrest <- df[df$Gene %in% ensembl_ids, c("Gene", group, dir)]
-#       directed_scores <- abs(genes_of_intrest[,group]) * genes_of_intrest[, dir]
-#       names(directed_scores) <- genes_of_intrest$Gene
-#     }
-    
-#     genes_of_intrest <- df[df$Gene %in% ensembl_ids, c("Gene", group)]
-    
-#     list_T2[[pathway]] <- list("T2"= T2, "signed_score"=gene_specific_score, "cat_scores_group"= directed_scores)
-#   }
+  p_kfold <- pnorm(actual_kfold, mean= mean(temp_kfold), sd=sd(temp_kfold), lower.tail = FALSE)
+  p_valid <- pnorm(actual_valid, mean= mean(temp_valid), sd=sd(temp_valid), lower.tail=FALSE)
   
-#   return(list_T2)
-# }
+  return(list("kfold"= p_kfold, "valid"=p_valid))
+}
 
+#Example code using target group model, same holds for sex combined model and all  PMC models
+target_gene_perm_label_group <- read.csv("RNA/Permutation_Tests/output/output_patient_permutation/group/TARGET_Group_model_stats_400.csv") 
+target_model_perm_genes_group <- read.csv("RNA/Permutation_Tests/output/output_random_gene_permutation/TARGET_group_gene_perm_model_stats_400.csv")
 
-# kegg_interpretation_sorted <- function(group1="PMC_group", group2="TARGET_group") {
-#   data <- read_output_files(0.8)
-
-#   list1 <-  tsquare_kegg(data[[group1]], "cat_d", "d_d")
-#   ordered_list1 <-  order_list(list1)
-#   list1_T2 <- sapply(ordered_list1, function(ls){return(ls$T2)})
-  
-#   list2 <- tsquare_kegg(data[[group2]], 'cat_d', "d_d")
-#   ordered_list2 <- order_list(list2)
-#   list2_T2 <- sapply(ordered_list2, function(ls){return(ls$T2)})
-  
-#   kegg_names1<- kegg_pathway_id_to_name(names(ordered_list1[1:20]))
-#   df1 <- cbind(kegg_names1, "T2"=list1_T2[1:20])
-  
-#   kegg_names2 <-  kegg_pathway_id_to_name(names(ordered_list2[1:20]))
-#   df2 <- cbind(kegg_names2, "T2"=list2_T2[1:20])
-  
-#   #TODO,Uncomment If you want to insepct dataframes in R studio
-#   #View(df1)
-#   #View(df2)
-#   #View(merge(kegg_names1, kegg_names2, by="from"))
-  
-#   return(list("group1" = df1, "group2" = df2))
-# }
-
-
-# kegg_interpretation_permutation <- function() {
-#   data <- read_output_files(0.8)
-#   pmc_permuted_kegg_scores.1 <- read_csv(paste(wd, "RNA/Permutation_Tests/output/output_kegg_permutation/kegg_scores_permutation/pmc_kegg_permutation_5001.csv", sep="/"))
-#   pmc_permuted_kegg_scores.2 <- read_csv(paste(wd, "RNA/Permutation_Tests/output/output_kegg_permutation/kegg_scores_permutation/pmc_kegg_permutation_5002.csv", sep="/"))
-
-#   colnames(pmc_permuted_kegg_scores.1)[1] <- "ID"
-#   colnames(pmc_permuted_kegg_scores.2)[1] <- "ID"
-#   pmc_permuted_kegg_scores <- merge(pmc_permuted_kegg_scores.1, pmc_permuted_kegg_scores.2, by="ID")
-  
-#   #first calculate T^2 values for pmc 
-#   pmc_list <- tsquare_kegg(data[["PMC_group"]], "cat_d", "d_d")
-#   #for all kegg pathways get the T2 value 
-#   T2_values <- sapply(pmc_list, function(a){as.double(a[["T2"]])})
-#   print(typeof(T2_values))
-  
-#   result <- data.frame("Id" = c("hsa000"), "name" = c("test"), "p_value"=c(1), "T2"=c(1), "p_adj"=c(1))
-#   #for all T2 values check significance
-#   for(name in names(T2_values)) {
-
-#     perm_distribution <- as.numeric(pmc_permuted_kegg_scores[pmc_permuted_kegg_scores[,1] == name,-1])
-#     n_equal_or_higher_to_T2_value <- sum(perm_distribution >= T2_values[name])
-    
-#     probability <- n_equal_or_higher_to_T2_value / length(perm_distribution)
-    
-#     result <- rbind(result, c("Id"= name,"name"= "", "p_value"=probability, "T2"=as.numeric(T2_values[name]), "p_adj"=0))
-#   }
-
-  
-#   result <- result[-1,]
-#   result$name <- (kegg_pathway_id_to_name(result$Id))$to
-#   result$p_value <- as.double(result$p_value)
-  
-#   result$p_adj <- p.adjust(result$p_value, method="BH")
-
-#   result$T2 <- as.double(result$T2)
-  
-#   return(result)
-  
-# }
-
-
-# order_list <- function(ls){ 
-#   return(ls[order(sapply(ls, function(l) {unlist(l[1])}, simplify=T ), decreasing=T )])
-# }
-
-# kegg_pathway_viewer <- function(pathway) {
-#   data <- read_output_files(0.8)
-#   pmc_group <- data[["PMC_group"]]
-#   target_group <- data[["TARGET_group"]]
-  
-#   pmc_group_gender <- data[["PMC_group_gender"]]
-#   target_group_gender <- data[["TARGET_group_gender"]]
-  
-#   pmc_list_all <- tsquare_kegg(pmc_group, "cat_d", "d_d")
-#   ordered_pmc_all <-  order_list(pmc_list_all)
-  
-#   genes<-pmc_list_all[[pathway]]$cat_scores_group
-#   idx <-genes
-  
-#   mapper<-(bitr(names(idx), "ENSEMBL", c("ENTREZID", "UNIPROT" ), org.Hs.eg.db))
-#   names(idx)<- mapper[!duplicated(mapper$ENSEMBL),2]
-  
-#   ss <- summary(idx)
-#   pathview(gene.data=idx,species="hsa",pathway.id=pathway, limit = c(-10, 10),  high = "#D40000FF", mid = "#FFFFFF", low = "#005EB8FF", cpd.idtype = "kegg",gene.idtype =
-#              "entrez", kegg.dir="kegg_analysis/kegg_data")
-  
-# }
+calc_P(target_gene_perm_label_group)
+calc_P(target_model_perm_genes_group)
 
 
 
-# data <- read_output_files(0.8)
-# #PMC group and group gender
-# all_genes <- substr(colnames(pmc_data[["X"]]),1,15)
-# t1<-over_representation(data[["PMC_group"]]$Gene, all_genes)
+#Example code on TARGET data, in paper PMC was used. Data can be obtained upon request
+sda_pathway_plot <- function() {
+  target_data <- load_TARGET_data()
+  load("/Users/stevenwijnen/surfdrive/PMC/project/WGS/EXIT/kegg_t2.RData")
+  scores <- read_output_files(0.8)
+  scores[["TARGET_group_gender"]][,c(5,7)]
+  t_genes <- scores[["TARGET_group_gender"]][scores[["TARGET_group_gender"]]$Gene %in% all[["hsa05165"]],]
+t_genes.2 <- target_data[["X"]][,t_genes$Gene]
+x <- apply(t_genes.2, 1, function(x) sum(x * t_genes[,c(5)]))
+y <- apply(t_genes.2, 1, function(x) sum(x * t_genes[,c(6)]))
 
-# #TARGET group and group gender
-# over_representation(data[["TARGET_group_gender"]]$Gene, colnames(target_data[["X"]]))
+df <- data.frame(x,y)
+df <- df %>% merge(target_data[["Y"]], by.x="row.names", by.y="patient_id")
 
+ggplot(df , aes(x=x,y=y, color=Group_Gender, label=Row.names)) + geom_point() + 
+  labs(x = "Component 1", y="Component 2") + coord_cartesian(xlim=c(-6000,10), ylim=c(-10,4000))+
+ annotate("text", label="hsa05165", x=-250000,y=1100000, color="black") +
+  scale_color_discrete(name="Class",labels=c('Low IRR female', 'Low IRR male', 'High IRR female', "High IRR male"))
+}
 
-
-
-# #gseKEGG use the gene set enrichment analysis and enrichKEGG use over-representation test, 
-# #and GESA doesn't need to run differential gene expression analysis beforehand
-
-# genes_group_gender_target <- read.csv("Scripts/sda_pipeline_output/TARGET_sign_genes_group_gender_all", col.names=c("Gene", "index", "score", "cat_c_f", "cat_c_m", "cat_d_f", "cat_d_m"))
-
-# sum(genes_group_gender_target$Gene %in% colnames(target_data[["X"]][,which(!colnames(target_data[["X"]])%in% substr(colnames(pmc_data[["X"]]), 1,15))]))
-
-
-
-# tt <- pmc_data[["Y"]]
-# X <- pmc_data[["X"]][tt$Biomaterial_Id,] 
-# all(rownames(X) == tt$Biomaterial_Id)
-# y <- tt$Group_Gender
-
-# ra <- sda.ranking(X,y , fdr=TRUE, diagonal=FALSE, plot.fdr = FALSE, ranking.score = "entropy")
-# ra.1 <- ra[ra[,"lfdr"] < 0.8, ]
-# nFeatures <- sum(ra[,"lfdr"] < 0.8)
-
-# selVars = ra[,"idx"][1:nFeatures]
-# df <- rownames_to_column(as.data.frame(ra.1), var="Gene")
-# df$Gene <- substr(df$Gene, 1,15)
-# pmc_list <- tsquare_kegg(df, "cat.tall+b_male")
-# ordered_pmc_males <- order_list(pmc_list)
-# pmc_kegg_names_all <- kegg_pathway_id_to_name(names(ordered_pmc_males[1:20]))
-
-
-
-
-# test <- tsquare_kegg(data[["PMC_group"]], "cat_d")
-# group <- kegg_interpretation_sorted()[[1]]
-
-# all <- list()
-# for(name in names(test)) {
-#   print(name)
-#   if(name %in% group[1:20,"from"] | name %in% t1$ID) {
-#     all[[name]] <- test[[name]]$signed_score$gene   
-#   }
-# }
-
-# save(all, file="/Users/stevenwijnen/surfdrive/PMC/project/WGS/EXIT/kegg_t2.RData")
-
-# library(rgl)
-# test <- read_output_files(0.8)
-# test[["PMC_group_gender"]][,c(5,7)]
-# t_genes<-pmc_data[["X"]][,test[["PMC_group_gender"]]$Gene]
-# x <- apply(t_genes, 1, function(x) sum(x * test[["PMC_group_gender"]][,c(4)]))
-# y <- apply(t_genes, 1, function(x) sum(x * test[["PMC_group_gender"]][,c(6)]))
-# z <- apply(t_genes, 1, function(x) sum(x * test[["PMC_group_gender"]][,c(6)]))
-
-# df <- data.frame(x,y,z)
-# df <- df %>% merge(pmc_data[["Y"]], by.x="row.names", by.y="Biomaterial_Id")
-
-# ggplot(df , aes(x=x,y=y, color=Group_Gender, label=Row.names)) + geom_point() 
-
-
-# plot_ly(x=df$x, y=df$y, z=df$z, type="scatter3d", mode="markers", color=df$Disease)
-
- 
- 
-#  t_genes<-pmc_data[["X"]][,test[["PMC_group"]]$Gene]
-#  x <- apply(t_genes, 1, function(x) sum(x * test[["PMC_group"]][,c(4)]))
-#  y <- apply(t_genes, 1, function(x) sum(x * test[["PMC_group"]][,c(5)]))
-
-#  df <- data.frame(x,y,z)
-#  df <- df %>% merge(pmc_data[["Y"]], by.x="row.names", by.y="Biomaterial_Id")
-#  ggplot(df, aes(x=x,y=y, color=Disease, label=Row.names)) + geom_point() 
- 
-#  X <- pmc_data[["X"]]
-#  X <- X[which(!row.names(X) %in% weird_ones) ,]
-#  Y <- pmc_data[["Y"]]
-#  Y <- Y[which(!Y$Biomaterial_Id %in% weird_ones),]
-#  ra <- sda.ranking(X,Y$Group_Gender)
-#  ra.fndr <- ra[which(ra[,"lfdr"] < 0.8),]
-#  t_genes<-pmc_data[["X"]][,row.names(ra.fndr)] %>% filter()
- 
-#  x <- apply(t_genes, 1, function(x) sum(x * ra.fndr[,4]))
-#  y <- apply(t_genes, 1, function(x) sum(x * ra.fndr[,6]))
-
-#  df <- data.frame(x,y,z)
-#  df <- df %>% merge(pmc_data[["Y"]], by.x="row.names", by.y="Biomaterial_Id")
-#  ggplot(df, aes(x=x,y=y, color=Disease, label=Row.names)) + geom_point()  
-
- 
- 
- 
- 
- 
+sda_pathway_plot()

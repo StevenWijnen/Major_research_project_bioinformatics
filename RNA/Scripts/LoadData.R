@@ -63,7 +63,7 @@ load_TARGET_data <- function() {
 #PMC data is confidential and can be obtained upon request
 load_PMC_data <- function() {
   #use combat batch corrected normalized counts as calculated by DESeq2_Normalization script.
-  dir <- paste(wd, "RNA/data/PMC/Normalized_counts/", sep="/")
+  dir <- paste(wd, "RNA/data/PMC/", sep="/")
 
   df_patients <-readRDS(paste(dir, "df_patients.RData", sep=""))
   normalized_counts <- readRDS(paste(dir,"normalised_counts.RData", sep=""))
