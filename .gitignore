@@ -51,3 +51,7 @@ RNA/data/PMC
 
 #DON'T DELETE THIS LINE:
 RNA/data/PMC
+
+
+WGS/data
+WGS/output_filtered_vcf
