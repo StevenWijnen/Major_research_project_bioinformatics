@@ -37,7 +37,7 @@ desq_pipe <- function(df_cts_PMC, PMC_patients) {
   #only use main groups
   coldata <- coldata %>% dplyr::filter(Disease %in% c("bALL", "tALL", "AML","Burkitt"))
   
-  #Biomaterial ids from older pipeline version, containing a batch effect which needs to be removed.
+  #Biomaterial ids from older pipeline version, containing a batch effect which needs to be removed, named weird_once.
   #These different cancer types cluster together in the PCA if not corrected for..
   weird_ones <- get_weird_samples()
   coldata <- coldata %>% mutate(batch = ifelse(Biomaterial_Id %in% weird_ones, "b2", "b1"))
@@ -53,7 +53,7 @@ desq_pipe <- function(df_cts_PMC, PMC_patients) {
   } else {
     #Remove btach effect with combat 
     #Create design matrix for covariates we want to keep; here gender
-    design0 <- model.matrix(~ coldata$Gender)
+  design0 <- model.matrix(~ coldata$Gender)
   #If biomaterial id belongs to the old batch set batch to b2
 	coldata<-coldata %>% mutate(batch = ifelse(Biomaterial_Id %in% weird_ones, "b2", "b1"))
 	#Use batch correction tool on the original cts matrix. Here we design the matrix such that  Gender and Disease such that effects aren't omitted by the tool

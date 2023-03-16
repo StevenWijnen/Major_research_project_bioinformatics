@@ -55,3 +55,4 @@ RNA/data/PMC
 
 WGS/data
 WGS/output_filtered_vcf
+WGS/wrong_samples.R

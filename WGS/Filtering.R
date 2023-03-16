@@ -58,26 +58,31 @@ mmq_filter <- function(x) {
 }
 
 #Loop over the directory containing vcf and tbi files and filter the vcf file
-#Than write the new file to the right location
+#Than write the filtered file to the right location
 filter_vcf_files <- function(output_dir="") {
-    filters <- FilterRules(list(DP=dp_filter, VAF=vaf_filter, MMQ= mmq_filter))
-    
     #Get the files that needs to be filtered
     patient_data <- read.csv("WGS/data/data_request_01_patient_data.csv",  sep=";")
     
+    #Parse all vcf files for which we have at least tumor WGS data;
+    #Obtain there ids
     tumor_ids <- patient_data %>% 
         filter(X01_Biomaterial_type == "DNA") %>%   
         filter(X02_Disease_status == "tumor") %>% 
-        select(Biomaterial_Id) %>% unlist()
+        dplyr::select(Biomaterial_Id) %>% 
+        unlist()
+
     #Here we only get the file names
-    files <- list.files("WGS/data/unfiltered_vcfs/", pattern="*.vcf.gz$")
+    files <- list.files("WGS/data/unfiltered_vcf/", pattern="*.vcf.gz$")
     #Here we append the path to the file name
-    files_locations <- paste("WGS/data/unfiltered_vcfs/", files, sep="/")
+    files_locations <- paste("WGS/data/unfiltered_vcf/", files, sep="/")
 
     for(id in tumor_ids) {
         if(any(grepl(id, files_locations))) {
             index <- which(grepl(id, files_locations))
+            #Create the vaf filter with correct tumor id
             vaf_filter <- wrapperFunction(id)
+            
+            #Set all the filters
             filters <- FilterRules(list(DP=dp_filter, VAF=vaf_filter, MMQ= mmq_filter))
             destination.file <- paste(output_dir, substr(files[index],1, nchar(files[index])-3 ), sep="/")
             
@@ -87,7 +92,7 @@ filter_vcf_files <- function(output_dir="") {
     }
 }   
 
-filter_vcf_files("WGS/output_filtered_vcf)
+filter_vcf_files("WGS/output_filtered_vcf")
 
 
 
