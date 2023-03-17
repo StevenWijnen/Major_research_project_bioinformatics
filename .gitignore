@@ -42,7 +42,11 @@ vignettes/*.pdf
 
 RNA/DESeq2/weird_samples.R
 RNA/Scripts/blacklist_pmc_ids.R
-RNA/Permutation_Tests/output
+RNA/Permutation_Tests/output/output_patient_permutation
+RNA/Permutation_Tests/output/output_random_gene_permutation
+RNA/Permutation_Tests/output/output_kegg_permutation/*[^.zip]
+
+
 RNA/data/TARGET
 RNA/data/hsa_KEGG.RData
 RNA/data/PMC
