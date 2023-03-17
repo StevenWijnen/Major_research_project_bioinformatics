@@ -76,6 +76,9 @@ load_PMC_data <- function() {
     pivot_longer(cols=-GeneId , names_to="patient_id", values_to="normalised_count") %>% 
     pivot_wider(names_from = "GeneId", values_from = "normalised_count")
   
+
+
+  #test commit 
   coldata_total <- df_patients[df_patients$Biomaterial_Id %in% df_cts$patient_id,c("Biomaterial_Id", "Gender", "Tumor_type", "Tissue", "Disease")]  %>% 
     arrange(Biomaterial_Id)
   
