@@ -1,4 +1,3 @@
-library(BSgenome)
 library(dplyr)
 library(org.Hs.eg.db)
 library(tidyr)
@@ -105,23 +104,23 @@ overall_coding_mutations <- function() {
   
 }
 
-# coding_mutations <- overall_coding_mutations()
+coding_mutations <- overall_coding_mutations()
 
-# ggplot(coding_mutations, aes(x = "", y =mutations, color=short, label=biomat_id))  +
-#   geom_boxplot(notch=T) +  
-#   xlab("Cancer type") + 
-#   ylab("Number of coding mutations") + 
-#   labs(color = "Cancer types") 
+ggplot(coding_mutations, aes(x = "", y =mutations, color=short, label=biomat_id))  +
+  geom_boxplot(notch=T) +  
+  xlab("Cancer type") + 
+  ylab("Number of coding mutations") + 
+  labs(color = "Cancer types") 
 
 
-# ggplot(coding_mutations, aes(x = "", y =mutations, color=Gender))  +
-#   geom_boxplot(notch=T) +  
-#   xlab("Gender") + 
-#   ylab("Number of coding mutations") + 
-#   scale_color_discrete(labels=c('Female', 'Male')) + 
+ggplot(coding_mutations, aes(x = "", y =mutations, color=Gender))  +
+  geom_boxplot(notch=T) +  
+  xlab("Gender") + 
+  ylab("Number of coding mutations") + 
+  scale_color_discrete(labels=c('Female', 'Male')) + 
   stat_compare_means(method = "wilcox.test")
 
-#summary(anova(lm(mutations ~ Gender + short, data=coding_mutations)))
+summary(anova(lm(mutations ~ Gender + short, data=coding_mutations)))
 
 
 genes_of_interest <- function() {
@@ -187,7 +186,7 @@ map_mutations_to_genes <- function() {
     print(count)
     if(id %in% patient_data$Biomaterial_Id) {
       print(id)
-     used_ids <- c(used_ids, id)
+      used_ids <- c(used_ids, id)
 
       #Read the vcf file
       vcf <- readVcf(file, "hg38")
@@ -227,67 +226,65 @@ map_mutations_to_genes <- function() {
   }
   
   wrong_samples <- wrong_samples()
-  df_patients_with_intresting_gene_mutations_PMC <- df_patients_with_intresting_gene_mutations_PMC %>% filter(!PMC.ID %in% wrong_samples)
+  df_patients_with_intresting_gene_mutations_PMC <- df_patients_with_intresting_gene_mutations_PMC %>% filter((!PMC.ID %in% wrong_samples), (PMC.ID %in% used_ids))
   
-  #Filter out the files for which we did not have a VCF file
-  null_ids <- df_patients_with_intresting_gene_mutations_PMC %>% group_by(PMC.ID, .drop=FALSE) %>% summarise(total= sum(count)) %>% filter(total == 0) %>% dplyr::select(PMC.ID)
-  df_patients_with_intresting_gene_mutations_PMC <- df_patients_with_intresting_gene_mutations_PMC %>% dplyr::filter(!PMC.ID %in% null_ids$PMC.ID) 
 
   return(df_patients_with_intresting_gene_mutations_PMC)
 }
 
-#Know that we have the mutations perform the analysis
-mutations <- map_mutations_to_genes()
-interesting_genes <- genes_of_interest()
 
-KEGG_Genes <- interesting_genes[[2]]
-EXIT_Genes <- interesting_genes[[3]]
+# #Know that we have the mutations perform the analysis
+# mutations <- map_mutations_to_genes()
+# interesting_genes <- genes_of_interest()
 
-patient_data <- load_patient_data()
-#EXIT gene analysis 
+# KEGG_Genes <- interesting_genes[[2]]
+# EXIT_Genes <- interesting_genes[[3]]
 
-#Get only the mutations in the EXIT genes
-df <- mutations %>%    
-  filter(TXID %in% EXIT_Genes) %>% 
-  group_by(PMC.ID) %>% 
-  summarise(total_mut = sum(count))  %>% 
-  distinct(PMC.ID, .keep_all=TRUE)  %>% 
-  merge(patient_data, by.x="PMC.ID", by.y="Biomaterial_Id") 
+# patient_data <- load_patient_data()
+# #EXIT gene analysis 
 
-#Create the boxplot of the EXIT genes
-ggplot(df, aes(x = "", y = total_mut, color=Gender))  +
-  geom_boxplot(notch=TRUE) + 
-  scale_color_discrete(labels = c("Female", "Male")) +
-  xlab("Gender") +
-  ylab("# Mutations EXIT genes")  + 
-  stat_compare_means(method = "wilcox.test")
+# #Get only the mutations in the EXIT genes
+# df <- mutations %>%    
+#   filter(TXID %in% EXIT_Genes) %>% 
+#   group_by(PMC.ID) %>% 
+#   summarise(total_mut = sum(count))  %>% 
+#   distinct(PMC.ID, .keep_all=TRUE)  %>% 
+#   merge(patient_data, by.x="PMC.ID", by.y="Biomaterial_Id") 
 
-#Check if the significance still holds if we correct for the potential confounding effect disease
-m1 <- lm(total_mut ~ Gender + short , data=df)
-print(summary(m1))
+# #Create the boxplot of the EXIT genes
+# ggplot(df, aes(x = "", y = total_mut, color=Gender))  +
+#   geom_boxplot(notch=TRUE) + 
+#   scale_color_discrete(labels = c("Female", "Male")) +
+#   xlab("Gender") +
+#   ylab("# Mutations EXIT genes")  + 
+#   stat_compare_means(method = "wilcox.test")
 
-#For the KEGG pathway analysis only two pathways where significant plot these
-df1 <- mutations %>%
-  filter(TXID %in% KEGG_Genes[[9]]) %>%
-  group_by(PMC.ID) %>% summarise(total_mut = sum(count)) %>%
-  distinct(PMC.ID, .keep_all=TRUE)  %>%
-  merge(patient_data, by.x="PMC.ID", by.y="Biomaterial_Id")
+# #Check if the significance still holds if we correct for the potential confounding effect disease
+# m1 <- lm(total_mut ~ Gender + short , data=df)
+# print(summary(m1))
 
-
-df2 <- mutations %>% 
-  filter(TXID %in% KEGG_Genes[[22]]) %>% 
-  group_by(PMC.ID) %>% summarise(total_mut = sum(count)) %>% 
-  distinct(PMC.ID, .keep_all=TRUE)  %>% 
-  merge(patient_data, by.x="PMC.ID", by.y="Biomaterial_Id")
+# #For the KEGG pathway analysis only two pathways where significant plot these
+# df1 <- mutations %>%
+#   filter(TXID %in% KEGG_Genes[[9]]) %>%
+#   group_by(PMC.ID) %>% summarise(total_mut = sum(count)) %>%
+#   distinct(PMC.ID, .keep_all=TRUE)  %>%
+#   merge(patient_data, by.x="PMC.ID", by.y="Biomaterial_Id")
 
 
-df1$Pathway = "PI3K-Akt signaling pathway"
-df2$Pathway = "Herpes simplex virus 1 infection"
+# df2 <- mutations %>% 
+#   filter(TXID %in% KEGG_Genes[[22]]) %>% 
+#   group_by(PMC.ID) %>% summarise(total_mut = sum(count)) %>% 
+#   distinct(PMC.ID, .keep_all=TRUE)  %>% 
+#   merge(patient_data, by.x="PMC.ID", by.y="Biomaterial_Id")
 
-df_all <- rbind(df1,df2)
 
-ggplot(df_all, aes(x = Pathway, y = total_mut, color=Gender))  +
-  geom_boxplot(notch=TRUE) + stat_compare_means(method = "wilcox.test") +    
-  scale_color_discrete(labels = c("Female", "Male")) +
-  xlab("Pathway") +
-  ylab("# Mutations in pathway")
+# df1$Pathway = "PI3K-Akt signaling pathway"
+# df2$Pathway = "Herpes simplex virus 1 infection"
+
+# df_all <- rbind(df1,df2)
+
+# ggplot(df_all, aes(x = Pathway, y = total_mut, color=Gender))  +
+#   geom_boxplot(notch=TRUE) + stat_compare_means(method = "wilcox.test") +    
+#   scale_color_discrete(labels = c("Female", "Male")) +
+#   xlab("Pathway") +
+#   ylab("# Mutations in pathway")
