@@ -326,9 +326,8 @@ kegg_pathway_viewer <- function(pathway) {
 }
 
 
-#ls <- kegg_interpretation_permutation()
-#print(ls)
-
+ls <- kegg_interpretation_permutation()
+print(ls)
 
 
 #Calculate P scores for the models from the 405 permuted 
